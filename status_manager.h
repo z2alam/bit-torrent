@@ -2,6 +2,11 @@
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~status_manager.h~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+/*
+ * BIT-TORRENT PROJECT - ECE1747H (PARALLEL PROGRAMMING)
+ * ZOHAIB ALAM 	(997093318)
+ * HATIF SATTAR (997063387)
+ */
 
 #ifndef STATUS_MANAGER_H
 #define STATUS_MANAGER_H

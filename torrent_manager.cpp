@@ -1,4 +1,10 @@
 /*
+ * BIT-TORRENT PROJECT - ECE1747H (PARALLEL PROGRAMMING)
+ * ZOHAIB ALAM 	(997093318)
+ * HATIF SATTAR (997063387)
+ */
+
+/*
  * ACKNOWLEDGEMENT:
  * 1- To get the IP address of Linux machine, obtained reference from:
  *    http://man7.org/linux/man-pages/man3/getifaddrs.3.html
@@ -377,6 +383,8 @@ void* TorrentManager::acceptConn(void* arg)
         tmpStat += strlen(tmpStat);
     }
 
+    printf("TEST1\n");
+
     while (1) {
 
         pthread_mutex_lock(exit_mutex);
@@ -386,6 +394,7 @@ void* TorrentManager::acceptConn(void* arg)
         if (_tmpBusy)
             continue;
 
+    printf("TEST2\n");
         pthread_mutex_lock(exit_mutex);
             _cliSocket[_numClients] = -1;
             _cliBusy[_numClients] = true;
@@ -397,6 +406,7 @@ void* TorrentManager::acceptConn(void* arg)
                         &clientLen)) < 0);
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
+    printf("TEST3\n");
         // which file does client need?
         while( read(_cliSocket[_numClients], msgBuffer, 19) < 0);
         sprintf(file_name, "%s", msgBuffer);
@@ -981,12 +991,12 @@ void* TorrentManager::receiveData(void* arg)
         // reading data from the peer
         while( read(_socket, _buffer, _tmpSize) < 0 );
 
-        // handshake.. 
-        while( write(_socket, msgBuffer, 19) < 0 );
         // write chunk to file
         _fileMan->fileWrite(_fileId, _tmpStart, _tmpSize, _buffer);
         _fileMan->updateChunks(_fileId);
        
+        // handshake.. 
+        while( write(_socket, msgBuffer, 19) < 0 );
 
         DEBUG_PRINT("%s: Chunk-Received:%d, start:%d, size:%d\n", __func__, i,
                 _tmpStart, _tmpSize);

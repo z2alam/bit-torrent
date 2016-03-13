@@ -1,3 +1,8 @@
+/*
+ * BIT-TORRENT PROJECT - ECE1747H (PARALLEL PROGRAMMING)
+ * ZOHAIB ALAM 	(997093318)
+ * HATIF SATTAR (997063387)
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -316,8 +321,8 @@ int FileManager::updateChunks(int idx){
     }
     else{
         pthread_mutex_lock( &mFileInfo[idx].fMutex );
-            mFileInfo[idx].totChunksExisting += 1;
             nextIdx = mFileInfo[idx].totChunksExisting;
+            mFileInfo[idx].totChunksExisting += 1;
         pthread_mutex_unlock( &mFileInfo[idx].fMutex );
         return nextIdx;
     }
