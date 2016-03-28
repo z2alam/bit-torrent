@@ -11,6 +11,7 @@
 #ifndef FILE_MANAGER_H
 #define FILE_MANAGER_H
 
+#include <string.h>
 #include <fstream>
 #include <pthread.h>
 
@@ -18,6 +19,8 @@
 #define FILES_INFO_PATH "files_list.txt"
 #define CHUNK_SIZE      1447 // 65536
 #define PACKET_SIZE     1447 // 22 packets/chunk
+
+using namespace std;
 
 struct FileInfo {
 	int fileId;
@@ -75,6 +78,8 @@ public:
 	 * Else return false
 	 */
 	int fileExists(char* fileName);
+
+    void UpdateFilesListDoc(int id, string name);
 
 	/*
 	 * A new file is successfully downloaded.

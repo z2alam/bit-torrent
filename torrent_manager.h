@@ -11,12 +11,14 @@
 #ifndef TORRENT_MANAGER_H
 #define TORRENT_MANAGER_H
 
+#include <string>
+#include <vector>
 #include <pthread.h>
 
 #define LOCAL_PEERS_INFO 	"peers_info.txt"
-#define MAX_IP_SIZE 		30
-#define DEF_PORT            3000
-#define DOWNLOAD_LIMIT      4  // 4 files
+#define MAX_IP_SIZE 30
+#define DEF_PORT 3000
+#define DOWNLOAD_LIMIT 4  // 4 files
 
 using namespace std;
 
@@ -27,8 +29,10 @@ class StatusManager;
 struct ThreadInfo;
 
 struct PeerInfo {
-    char ip[MAX_IP_SIZE];
-    int port;
+  string ip;
+  int port;
+
+  PeerInfo(string ip_, int port_) : ip(ip_), port(port_) {}
 };
 
 struct MainThreadData {
@@ -47,7 +51,7 @@ struct ThreadParams {
     char* fileName; // for connect thread only
     int* threadStack; // do minus 1 to indicate thread exit
     int* numPeers;
-    PeerInfo* peers;
+    vector<PeerInfo> *peerlist;
     MainThreadData* threadInfo;
     int* accSocket;
     bool staticLoad;
@@ -84,11 +88,9 @@ struct LowLevelThreadParams_v2 {
 
 class TorrentManager {
     private:
-        char mIP[MAX_IP_SIZE];
-
-        // peers info
+        string mIP; // self IP
         int mNumPeers;
-        PeerInfo* mPeers;
+        vector<PeerInfo> mPeerList;
 
         // main mutex
         bool mExitApp;

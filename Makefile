@@ -1,5 +1,5 @@
 CC=g++ -oterm -lpthread
-CFLAGS=-c -Wall
+CFLAGS=-c -std=c++11 -Wall
 LDFLAGS=
 SOURCES=main.cpp torrent_manager.cpp status_manager.cpp file_manager.cpp thread_pool.cpp
 OBJECTS=$(SOURCES:.cpp=.o)

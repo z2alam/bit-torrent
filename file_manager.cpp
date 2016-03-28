@@ -184,6 +184,35 @@ int FileManager::fileExists(char* fileName)
     return -1;
 }   
 
+void FileManager::UpdateFilesListDoc(int id, string name) {
+    ifstream ifs;
+    ifs.open(FILES_INFO_PATH);
+    string line;
+    string data;
+    int numFiles = 0;
+
+    if (ifs.is_open()) {
+        getline(ifs, line);
+        numFiles = atoi(line.c_str());
+
+        for (int i = 0; i < numFiles; ++i) {
+            getline(ifs, line);
+            data += line + "\n";
+        }
+
+        data += to_string(id) + "," + name;
+        ifs.close();
+    }
+
+    ofstream ofs;
+    ofs.open(FILES_INFO_PATH);
+    if (ofs.is_open()) {
+        ofs << numFiles+1 << "\n";
+        ofs << data;
+        ofs.close();
+    }
+}
+
 bool FileManager::addFileToDisk(int idx)
 {
     FileInfo* file = &mFileInfo[idx];
@@ -193,16 +222,8 @@ bool FileManager::addFileToDisk(int idx)
         file->complete = true;
     pthread_mutex_unlock( &file->fMutex );
 
-
     pthread_mutex_lock( &fileMutex );
-        FILE* fp = fopen(FILES_INFO_PATH, "r+");
-        char tmp[30];
-        sprintf(tmp, "%d", mNumFiles);
-        fwrite(tmp, sizeof(char), strlen(tmp), fp); // write
-
-        fseek(fp, 0, SEEK_END);
-        sprintf(tmp, "%d,%s", file->fileId, file->fileName);
-        fwrite(tmp, sizeof(char), strlen(tmp), fp); // write
+         UpdateFilesListDoc(file->fileId, string(file->fileName));
     pthread_mutex_unlock( &fileMutex );
 
     return true;
@@ -215,7 +236,7 @@ int FileManager::addFileToCache(char* file_name, int file_size)
     pthread_mutex_lock( &fileMutex );
 
     FileInfo* tmp = (FileInfo*)calloc((mNumFiles+1), sizeof (FileInfo));
-    FileInfo* tmp2 = &mFileInfo[0];
+    //FileInfo* tmp2 = &mFileInfo[0];
 
 
     cout << "[FileManager] Size of Cache = " <<

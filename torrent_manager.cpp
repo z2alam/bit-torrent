@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
+#include <sstream>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -34,7 +35,7 @@
 #include "torrent_manager.h"
 
 #define DEBUG 1
-#ifdef DEBUG 1
+#ifdef DEBUG
     #define DEBUG_PRINT printf
 #else
     #define DEBUG_PRINT
@@ -100,7 +101,6 @@ TorrentManager::TorrentManager() : mNumPeers(0), mExitApp(false)
 
     // init connect thread info
     for (int i=0; i < DOWNLOAD_LIMIT; ++i) {
-        
         mConnThreadInfo[i].status = false;
         pthread_mutex_init(&mConnThreadInfo[i].mutex, NULL);
     }
@@ -117,8 +117,7 @@ TorrentManager::~TorrentManager()
     //destructor
 
     // Free peers list
-    if (mPeers != NULL)
-        free (mPeers);
+    mPeerList.clear();
 
     if (mThPool)
         delete mThPool;
@@ -138,56 +137,49 @@ TorrentManager::~TorrentManager()
     pthread_mutex_destroy(&mMutex);
 }
 
-bool TorrentManager::updatePeersInfo()
-{
+vector<string> split(string str, char delimiter) {
+  vector<string> internal;
+  stringstream ss(str); // Turn the string into a stream.
+  string tok;
+
+  while(getline(ss, tok, delimiter)) {
+    internal.push_back(tok);
+  }
+  return internal;
+}
+
+bool TorrentManager::updatePeersInfo() {
     // Get the self IP.
     getIPAddress_v2();
-    printf("\nSelf IP address:%s, Default Port:%d\n\n", mIP, DEF_PORT);
+    printf("\nSelf IP address:%s, Default Port:%d\n\n", mIP.c_str(), DEF_PORT);
 
     // reading the peerfile 
     ifstream file(LOCAL_PEERS_INFO);
     string str;
 
-    if (getline(file, str)) {
-        // read the num of peers
+    // read the num of peers
+    if (getline(file, str))
         mNumPeers = atoi(str.c_str());
-    }
 
     // allocate based on the numPeers
-    if (mPeers != NULL)
-        free (mPeers);
+    mPeerList.clear();
 
-    mPeers = (PeerInfo*)calloc(mNumPeers, sizeof(PeerInfo));
-
-    string::size_type pos = 0;
-    string::size_type l_pos =0;
-    char tmp[MAX_IP_SIZE];
     int i = 0;
     while (getline(file, str)) {
-
         if (i == mNumPeers) {
             printf("ERROR: More peer-info then numPeers\n");
             return false;
         }
 
-        pos = str.find_first_of(',', l_pos);
+        vector<string> peer = split(str, ',');
+        mPeerList.emplace_back(peer[0], atoi(peer[1].c_str()));
 
-        strncpy(tmp, str.c_str(), pos);
-        tmp[pos] = '\0';
-        strncpy(mPeers[i].ip, tmp, MAX_IP_SIZE); 
-
-        strncpy(tmp, str.c_str()+pos+1, str.length()-pos-1); 
-        tmp[str.length()-pos-1] = '\0';
-        mPeers[i].port = atoi(tmp);
-
-        if ((!strcmp(mPeers[i].ip, mIP)) &&
-                (mPeers[i].port == DEF_PORT)) {
+        if (mIP.compare(peer[0]) == 0) {
             // Don't include this peer in the list
             mNumPeers--;
-        }
-        else {
-            printf("IP:%s, ", mPeers[i].ip);
-            printf("Port:%d\n", mPeers[i].port);
+        } else {
+            printf("IP:%s, ", mPeerList[i].ip.c_str());
+            printf("Port:%d\n", mPeerList[i].port);
             ++i;
         }
     }
@@ -205,7 +197,7 @@ bool TorrentManager::run()
     bool _static = STATIC_LOAD_BALANCING;
 
     ThreadParams threadParams = { mThPool, mFileMan, mStatMan,
-            &mExitApp, &mMutex, NULL, NULL, &mNumPeers, mPeers,
+            &mExitApp, &mMutex, NULL, NULL, &mNumPeers, &mPeerList,
             &mAccThreadInfo, &acceptSocket, _static};
 
     // Start accept thread
@@ -225,7 +217,6 @@ bool TorrentManager::run()
         fgets(input, 20, stdin);
 
         if (input[0] == 'h') {
-        
             printf("\n********************************\n");
             printf("*********Commands List**********\n");
             printf("********************************\n");
@@ -292,12 +283,10 @@ bool TorrentManager::run()
             }
         }
         else if (input[0] == 's') {
-
             mFileMan->printFilesList();
             continue;
         }
         else if (input[0] == 'q') {
-
             pthread_mutex_lock( &mMutex );
                 mExitApp = true;
             pthread_mutex_unlock( &mMutex );
@@ -353,7 +342,7 @@ void* TorrentManager::acceptConn(void* arg)
     char* tmpStat = _statLogs;
 
     // at start-up, none of the clients are busy
-    memset(_cliBusy, 0x0, sizeof(_cliBusy)); 
+    memset(_cliBusy, 0x0, sizeof(_cliBusy));
     for (int i=0; i < MAX_CLIENT_SOCKETS; ++i)
         _cliSocket[i] = -1;
 
@@ -370,55 +359,49 @@ void* TorrentManager::acceptConn(void* arg)
     *params->accSocket = srvSocket;
 
     // Bind server socket
-    while(bind(srvSocket, (struct sockaddr*)&srv_addr,
-                sizeof(srv_addr)) < 0 );
+    while(bind(srvSocket, (struct sockaddr*)&srv_addr, sizeof(srv_addr)) < 0 );
 
     // Stage for listening connections.
     listen(srvSocket, 5);
     clientLen = sizeof(cli_addr[0]);
 
     for (int i=0; i < MAX_CLIENT_SOCKETS; ++i) {
-
         sprintf(tmpStat, "ON:false, thread:-1, fileId:-1, chunk-sent:0\n");
         tmpStat += strlen(tmpStat);
     }
 
-    printf("TEST1\n");
-
-    while (1) {
-
+    while (true) {
         pthread_mutex_lock(exit_mutex);
-           _tmpBusy = _cliBusy[_numClients]; 
+           _tmpBusy = _cliBusy[_numClients];
         pthread_mutex_unlock(exit_mutex);
 
         if (_tmpBusy)
             continue;
 
-    printf("TEST2\n");
         pthread_mutex_lock(exit_mutex);
             _cliSocket[_numClients] = -1;
             _cliBusy[_numClients] = true;
         pthread_mutex_unlock(exit_mutex);
 
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-            while ((_cliSocket[_numClients] = accept( srvSocket,
-                        (struct sockaddr *) &cli_addr[_numClients],
-                        &clientLen)) < 0);
+            while ((_cliSocket[_numClients] = accept(srvSocket,
+                                                     (struct sockaddr *) &cli_addr[_numClients],
+                                                     &clientLen)) < 0);
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
-    printf("TEST3\n");
         // which file does client need?
-        while( read(_cliSocket[_numClients], msgBuffer, 19) < 0);
+        while (read(_cliSocket[_numClients], msgBuffer, 19) < 0);
+
         sprintf(file_name, "%s", msgBuffer);
         printf("%s: file requested:%s\n", __func__, file_name);
-        
+
         if ((_fileIds[_numClients] = fileMan->fileExists(file_name)) == -1) {
             printf("%s: File does not exist.\n", __func__);
             sprintf(msgBuffer, "N");
             while ( write(_cliSocket[_numClients], msgBuffer, 19) < 0 );
             continue;
         }
- 
+
         printf("%s: File exists - starting sending...\n", __func__);
         sprintf(msgBuffer, "Y");
         while( write(_cliSocket[_numClients], msgBuffer, 19) < 0 );
@@ -435,7 +418,7 @@ void* TorrentManager::acceptConn(void* arg)
             while( read(_cliSocket[_numClients], msgBuffer, 19) < 0);
         }
 
-        // Obtain a connect thread 
+        // Obtain a connect thread
         if ((_threadIds[_numClients] =
                     threadPool->getConnectThread(_threads[_numClients])) == -1) {
 
@@ -457,8 +440,7 @@ void* TorrentManager::acceptConn(void* arg)
                         _threadIds[_numClients]);
                 goto error;
             }
-        }
-        else {
+        } else {
             if (pthread_create(_threads[_numClients], NULL, &sendData_v2, &threadParams)) {
 
                 printf("ERROR: Receive thread:%d creation failed\n",
@@ -473,7 +455,6 @@ void* TorrentManager::acceptConn(void* arg)
         pthread_mutex_unlock( exit_mutex );
 
         if (_exitThread) {
-
             pthread_mutex_lock( &threadInfo->mutex );
                 threadInfo->status = false;
             pthread_mutex_unlock( &threadInfo->mutex );
@@ -500,11 +481,11 @@ void* TorrentManager::sendData_v2(void* arg)
     int _socket = params->socket;
     int _threadId = params->threadId;
     int _fileId = params->fileId;
-    char* _statLogs = params->statLogs;
-    int _threadIdx = params->idx;
+    //char* _statLogs = params->statLogs;
+    //int _threadIdx = params->idx;
 
     char _buffer[CHUNK_SIZE];
-    char tmpStat[128];
+    //char tmpStat[128];
     char msgBuffer[20];
     int _size = 0;
     int _start = 0;
@@ -513,17 +494,16 @@ void* TorrentManager::sendData_v2(void* arg)
     int _chunksTransfered = 0;
     // obtain the picture of file locally..
     int _totSize = _fileMan->getFileSize(_fileId);
-    int _totChunks = (_totSize / CHUNK_SIZE) +
-                    (((_totSize % CHUNK_SIZE) == 0) ? 0 : 1);
+    int _totChunks = (_totSize / CHUNK_SIZE) + (((_totSize % CHUNK_SIZE) == 0) ? 0 : 1);
 
     while (1) {
-        
-        while (read(_socket, msgBuffer, 19) < 0 );
+        while (read(_socket, msgBuffer, 19) < 0);
 
         if (msgBuffer[0] == 'e') {
             //exit thread
             break;
         }
+
         // else retrieve idx
         _idx = atoi(msgBuffer);
         //DEBUG_PRINT("%s: Idx:%d.. totSize:%d\n", __func__, _idx, _totSize);
@@ -606,7 +586,7 @@ void* TorrentManager::sendData(void* arg)
         _tmpSize = (i == (_chunksNeeded-1)) ? (_size - _tmpStart + _start) :
             CHUNK_SIZE;
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-       
+
         // read chunk from file
         _fileMan->fileRead(_fileId, _tmpStart, _tmpSize, _buffer);
 
@@ -649,14 +629,13 @@ void* TorrentManager::connectPeers(void* arg)
     FileManager* fileMan = (FileManager*) params->F_Man;
     pthread_mutex_t* mutex = params->tParams_mutex;
     char* file_name = params->fileName;
-    PeerInfo* _peersList = params->peers;
+    vector<PeerInfo> _peersList = *(params->peerlist);
     MainThreadData* mainThreadInfo = params->threadInfo;
     bool _static = params->staticLoad;
-    
     int err = -1;
 
-    struct hostent* server; 
-    char _ip[MAX_IP_SIZE];
+    struct hostent* server;
+    string _ip;
     int _port;
     int _nPeers;
     //char* _statLogs = &mainThreadInfo->statLogs[0];
@@ -668,7 +647,7 @@ void* TorrentManager::connectPeers(void* arg)
     char msgBuffer[20];
 
     pthread_mutex_lock(mutex);
-        _nPeers = *(params->numPeers); 
+        _nPeers = *(params->numPeers);
     pthread_mutex_unlock(mutex);
 
     struct sockaddr_in cli_addr[_nPeers];
@@ -685,7 +664,7 @@ void* TorrentManager::connectPeers(void* arg)
     // profiler variables
     int _timeStart = gettimeofdayMs();
     int _timeEnd = 0;
-    
+
     // "last processed chunk" -- chunk status queue
     int _lpChunk = 0;
     pthread_mutex_t _chunkQueueMutex;
@@ -698,41 +677,39 @@ void* TorrentManager::connectPeers(void* arg)
 
         pthread_mutex_lock(mutex);
             // getting the IPAddress and PortNo of the ith peer.
-            strncpy(_ip, _peersList[i].ip, strlen(_peersList[i].ip));
+            _ip = _peersList[i].ip;
             _port = _peersList[i].port;
         pthread_mutex_unlock(mutex);
 
-        server = gethostbyname(_ip);
+        server = gethostbyname(_ip.c_str());
         bzero((char*) &cli_addr[i], sizeof(cli_addr[i]));
         cli_addr[i].sin_family = AF_INET;
-        bcopy((char*) server->h_addr, (char*) &cli_addr[i].sin_addr.s_addr,
-                server->h_length);
+        bcopy((char*) server->h_addr, (char*) &cli_addr[i].sin_addr.s_addr, server->h_length);
         cli_addr[i].sin_port = htons(_port);
-       
+
         // try to connect to peer 'i'
         int tries = 0;
         do {
             if (connect(srvSocket[_nPeersAvail], (struct sockaddr*) &cli_addr[i],
                         sizeof(cli_addr[i])) >= 0) {
-                printf("%s: Connected to: %s\n", __func__, _ip);
+                printf("%s: Connected to: %s\n", __func__, _ip.c_str());
                 break;
             }
            ++tries;
-
         } while (tries < 10);
 
         if (tries == 10) {
-            printf("%s: peer(%s) is not active [skipping]\n", __func__, _ip);
+            printf("%s: peer(%s) is not active [skipping]\n", __func__, _ip.c_str());
             continue;
         }
 
         // check if the peer has the file
         sprintf(msgBuffer, "%s", file_name);
-        while( write(srvSocket[_nPeersAvail], msgBuffer, 19) < 0);
-        while( read(srvSocket[_nPeersAvail], msgBuffer, 19) < 0 ); 
+        while (write(srvSocket[_nPeersAvail], msgBuffer, 19) < 0);
+        while (read(srvSocket[_nPeersAvail], msgBuffer, 19) < 0);
 
         if (msgBuffer[0] == 'N') { // response "NO"
-            printf("Peer:%s does not have the file\n", _ip);
+            printf("Peer:%s does not have the file\n", _ip.c_str());
             continue;
         }
 
@@ -740,19 +717,18 @@ void* TorrentManager::connectPeers(void* arg)
         if (_fileTotChunks == 0) {
 
             msgBuffer[0] = 'I'; // Req file Size in bytes
-            while( write(srvSocket[_nPeersAvail], msgBuffer, 19 ) < 0 );
-            while( read(srvSocket[_nPeersAvail], msgBuffer, 19) < 0 );
+            while (write(srvSocket[_nPeersAvail], msgBuffer, 19 ) < 0);
+            while (read(srvSocket[_nPeersAvail], msgBuffer, 19) < 0);
 
             _fileSize = atoi(msgBuffer);
-            _fileTotChunks = (_fileSize / CHUNK_SIZE) + 
-                (((_fileSize % CHUNK_SIZE) == 0) ? 0 : 1);
+            _fileTotChunks = (_fileSize / CHUNK_SIZE) + (((_fileSize % CHUNK_SIZE) == 0) ? 0 : 1);
             printf("%s: fileSize:%d and totchunks:%d\n", __func__,
                     _fileSize, _fileTotChunks);
         }
 
         msgBuffer[0] = 'S'; // Start sending
-        while( write(srvSocket[_nPeersAvail], msgBuffer, 19 ) < 0 );
-        
+        while (write(srvSocket[_nPeersAvail], msgBuffer, 19 ) < 0);
+
         // update status logs
         sprintf(tmpStat, "thread:-1, chunk-start-idx:-1, total-chunks:-1, "
                 "chunk-received:0..........\n");
@@ -770,8 +746,7 @@ void* TorrentManager::connectPeers(void* arg)
         _chunksPer = _fileTotChunks/_nPeersAvail;
         _startIdx = 0;
         _size = 0;
-    }
-    else {
+    } else {
         // add dynamic load balancing for performance.
         _lpChunk = 0;
         pthread_mutex_init(&_chunkQueueMutex, NULL);
@@ -810,7 +785,7 @@ void* TorrentManager::connectPeers(void* arg)
             _startIdx = (CHUNK_SIZE) * (_chunksPer) * (i);
             _size = (i == (_nPeersAvail-1)) ? (_fileSize - _startIdx) :
                 (_chunksPer * CHUNK_SIZE);
-           
+
             printf("%s: thread:%d, chunksPer:%d, startidx:%d, size:%d\n", __func__,
                     i, _chunksPer, _startIdx, _size);
             LowLevelThreadParams threadParams = { threadPool, fileMan, i, srvSocket[i],
@@ -820,8 +795,7 @@ void* TorrentManager::connectPeers(void* arg)
                 printf("ERROR: Receive thread:%d creation failed\n", _threadIds[i]);
                 goto error;
             }
-        }
-        else { // dynamic
+        } else { // dynamic
             LowLevelThreadParams_v2 threadParams = { threadPool, fileMan, i, srvSocket[i],
                     _threadIds[i], _fileId, _statLogs, NULL, mutex, &_lpChunk,
                     &_chunkQueueMutex, _fileSize };
@@ -831,7 +805,7 @@ void* TorrentManager::connectPeers(void* arg)
                 goto error;
             }
         }
-        printf("%s: thread:%d created for chunk (%d - %d) tranfer\n",
+        printf("%s: thread:%p created for chunk (%d - %d) tranfer\n",
                 __func__, _threads[i], _startIdx, _size);
     }
 
@@ -843,8 +817,7 @@ void* TorrentManager::connectPeers(void* arg)
     }
 
     _timeEnd = gettimeofdayMs();
-    _totChunks = (_fileSize / CHUNK_SIZE) + 
-                    (((_fileSize % CHUNK_SIZE) == 0) ? 0 : 1);
+    _totChunks = (_fileSize / CHUNK_SIZE) + (((_fileSize % CHUNK_SIZE) == 0) ? 0 : 1);
 
     printf("\n\n*******END OF FILE DATA TRANSFER STATUS *********\n");
     printf("%s: File transfered successfully [time: %dms]\n", __func__,
@@ -852,7 +825,7 @@ void* TorrentManager::connectPeers(void* arg)
     printf("%s: File name:%s .. Size:%d .. Chunks:%d\n", __func__,
             file_name, _fileSize, _totChunks);
     printf("%s: File Transfer Status:\nNumber of Peers:%d\n%s", __func__,
-            _nPeersAvail, _statLogs); 
+            _nPeersAvail, _statLogs);
     printf("**************************************************\n\n\n");
 
     if (!fileMan->addFileToDisk(_fileId)) {
@@ -883,22 +856,21 @@ void* TorrentManager::receiveData_v2(void* arg)
 {
     LowLevelThreadParams_v2* params = (LowLevelThreadParams_v2*)arg;
     FileManager* _fileMan = (FileManager*) params->F_Man;
-    ThreadPool* _threadPool = (ThreadPool*) params->T_Pool;
+    //ThreadPool* _threadPool = (ThreadPool*) params->T_Pool;
     int _socket = params->socket;
     int _threadId = params->threadId;
     int _fileId = params->fileId;
     char* _statLogs = params->statLogs;
     int _totSize = params->fileSize;
     int _threadIdx = params->idx;
-    int _totChunks = (_totSize / CHUNK_SIZE) + 
-                    (((_totSize % CHUNK_SIZE) == 0) ? 0 : 1);
+    int _totChunks = (_totSize / CHUNK_SIZE) + (((_totSize % CHUNK_SIZE) == 0) ? 0 : 1);
     int _idx = 0;
 
     // for jumping to latestProcessQueue
-    int _latestProcessIdx = -1;
+    //int _latestProcessIdx = -1;
     int _chunkSize = 0;
     int _chunkStart = 0;
-    bool _exit = false;
+    //bool _exit = false;
 
     char _buffer[CHUNK_SIZE];
     char _tmpStat[128];
@@ -930,8 +902,7 @@ void* TorrentManager::receiveData_v2(void* arg)
             sprintf(msgBuffer, "e");
             while( write(_socket, msgBuffer, 19) < 0);
             break;
-        } 
-        else {
+        } else {
             sprintf(msgBuffer, "%d", _idx);
             while( write(_socket, msgBuffer, 19) < 0);
         }
@@ -958,7 +929,7 @@ void* TorrentManager::receiveData(void* arg)
 {
     LowLevelThreadParams* params = (LowLevelThreadParams*)arg;
     FileManager* _fileMan = (FileManager*) params->F_Man;
-    ThreadPool* _threadPool = (ThreadPool*) params->T_Pool;
+    //ThreadPool* _threadPool = (ThreadPool*) params->T_Pool;
     int _socket = params->socket;
     int _threadId = params->threadId;
     int _fileId = params->fileId;
@@ -967,15 +938,14 @@ void* TorrentManager::receiveData(void* arg)
     int _start = params->start;
     int _idx = params->idx;
 
-    int _chunksNeeded = (_size / CHUNK_SIZE) + 
-                        (((_size % CHUNK_SIZE) == 0) ? 0 : 1);
+    int _chunksNeeded = (_size / CHUNK_SIZE) + (((_size % CHUNK_SIZE) == 0) ? 0 : 1);
     printf("%s: chunks needed:%d\n", __func__, _chunksNeeded);
     char _buffer[CHUNK_SIZE];
     char _tmpStat[128];
     int _tmpStart = _start;
     int _tmpSize = 0;
     char msgBuffer[20];
-    bool eof = false;
+    //bool eof = false;
 
     // informing peer # of chunks required
     sprintf(msgBuffer, "%d", _start);
@@ -985,8 +955,7 @@ void* TorrentManager::receiveData(void* arg)
 
     for (int i=0; i < _chunksNeeded; ++i) {
 
-        _tmpSize = (i == (_chunksNeeded-1)) ? (_size - _tmpStart + _start) :
-            CHUNK_SIZE;
+        _tmpSize = (i == (_chunksNeeded-1)) ? (_size - _tmpStart + _start) : CHUNK_SIZE;
 
         // reading data from the peer
         while( read(_socket, _buffer, _tmpSize) < 0 );
@@ -994,8 +963,8 @@ void* TorrentManager::receiveData(void* arg)
         // write chunk to file
         _fileMan->fileWrite(_fileId, _tmpStart, _tmpSize, _buffer);
         _fileMan->updateChunks(_fileId);
-       
-        // handshake.. 
+
+        // handshake..
         while( write(_socket, msgBuffer, 19) < 0 );
 
         DEBUG_PRINT("%s: Chunk-Received:%d, start:%d, size:%d\n", __func__, i,
@@ -1051,9 +1020,8 @@ bool TorrentManager::getIPAddress_v2()
             }
 
             // Store the IPAddress of the server
-            if (!strcmp(ifa->ifa_name, "eth0")) {
-                strncpy(mIP, host, strlen(host));
-                mIP[strlen(host)] = '\0';
+            if (strlen(host) >= 14) {
+                mIP = string(host);
             }
         }
     }
