@@ -421,6 +421,11 @@ void* TorrentManager::acceptConn(void* arg)
             while( read(_cliSocket[_numClients], msgBuffer, 19) < 0);
         }
 
+        if (msgBuffer[0] == 'E') { // This peer is not needed by receiver
+            _cliBusy[_numClients] = false;
+            continue;
+        }
+
         // Obtain a connect thread
         if ((_threadIds[_numClients] =
                     threadPool->getConnectThread(_threads[_numClients])) == -1) {
@@ -502,8 +507,6 @@ void* TorrentManager::sendData_v2(void* arg)
 
     while (1) {
         while (read(_socket, msgBuffer, 19) < 0);
-
-        //printf("test: %s\n", msgBuffer);
         if (msgBuffer[0] == 'e') {
             //exit thread
             break;
@@ -661,6 +664,8 @@ void* TorrentManager::connectPeers(void* arg)
 
     struct sockaddr_in cli_addr[_nPeers];
     int srvSocket[_nPeers];
+    LowLevelThreadParams tparams[_nPeers];
+    LowLevelThreadParams_v2 tparams_v2[_nPeers];
 
     int _chunksPer = 0;
     int _startIdx = 0;
@@ -736,9 +741,6 @@ void* TorrentManager::connectPeers(void* arg)
                     _fileSize, _fileTotChunks);
         }
 
-        msgBuffer[0] = 'S'; // Start sending
-        while (write(srvSocket[_nPeersAvail], msgBuffer, 19 ) < 0);
-
         // update status logs
         sprintf(tmpStat, "thread:-1, chunk-start-idx:-1, total-chunks:-1, "
                 "chunk-received:0..........\n");
@@ -769,12 +771,17 @@ void* TorrentManager::connectPeers(void* arg)
 
     threads_needed = GetRequiredThreadsNum(_fileSize, CHUNK_SIZE);
     for (int i=0; i < _nPeersAvail; ++i) {
-        if (threads_needed-- == 0)
-            break;
+        if (threads_needed-- <= 0) {
+            msgBuffer[0] = 'E'; // Peer not needed
+            while (write(srvSocket[i], msgBuffer, 19 ) < 0);
+            continue;
+        } else {
+            msgBuffer[0] = 'S'; // notify peer to start
+            while (write(srvSocket[i], msgBuffer, 19 ) < 0);
+        }
 
         // Obtain a connect thread 
         if ((_threadIds[i]= threadPool->getAcceptThread(_threads[i])) == -1) {
-
             // TODO: Fail entire data transfer when one thread fails
             printf("%s: ERROR: Not enough resources for connect"
                     " thread\n", __func__);
@@ -786,8 +793,6 @@ void* TorrentManager::connectPeers(void* arg)
         // Get corresponding fileInfo
         if (_fileId == -1) {
             if ((_fileId = fileMan->addFileToCache(file_name, _fileSize)) == -1) {
-
-                // TODO: Fail entire data transfer when one thread fails
                 printf("%s: ERROR: Cannot add file to cache", __func__);
                 goto error;
             }
@@ -801,19 +806,19 @@ void* TorrentManager::connectPeers(void* arg)
 
             printf("%s: thread:%d, chunksPer:%d, startidx:%d, size:%d\n", __func__,
                     i, _chunksPer, _startIdx, _size);
-            LowLevelThreadParams threadParams = { threadPool, fileMan, i, srvSocket[i],
+            tparams[i] = { threadPool, fileMan, i, srvSocket[i],
                     _threadIds[i], _fileId, _statLogs, _size, _startIdx, NULL, mutex };
 
-            if (pthread_create(_threads[i], NULL, &receiveData, &threadParams)) {
+            if (pthread_create(_threads[i], NULL, &receiveData, &tparams[i])) {
                 printf("ERROR: Receive thread:%d creation failed\n", _threadIds[i]);
                 goto error;
             }
         } else { // dynamic
-            LowLevelThreadParams_v2 threadParams = { threadPool, fileMan, i, srvSocket[i],
+            tparams_v2[i] = { threadPool, fileMan, i, srvSocket[i],
                     _threadIds[i], _fileId, _statLogs, NULL, mutex, &_lpChunk,
                     &_chunkQueueMutex, _fileSize };
 
-            if (pthread_create(_threads[i], NULL, &receiveData_v2, &threadParams)) {
+            if (pthread_create(_threads[i], NULL, &receiveData_v2, &tparams_v2[i])) {
                 printf("ERROR: Receive thread:%d creation failed\n", _threadIds[i]);
                 goto error;
             }
