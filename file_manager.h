@@ -14,6 +14,7 @@
 #include <string.h>
 #include <fstream>
 #include <pthread.h>
+#include <vector>
 
 #define FILE_PATH_SIZE 	50
 #define FILES_INFO_PATH "files_list.txt"
@@ -24,19 +25,22 @@ using namespace std;
 
 struct FileInfo {
 	int fileId;
-	char fileName[FILE_PATH_SIZE];
+    string fileName;
 	bool complete;			/* full file available */
     FILE* fp;
 	int totChunksPerFile;
 	int totChunksExisting;	/* how much chunks available if not full? */
     int file_size;
 	pthread_mutex_t fMutex;
+
+    FileInfo() : fileId(-1), fileName(""), complete(false), fp(NULL), totChunksPerFile(0),
+                    totChunksExisting(0), file_size(0) { }
 };
 
 class FileManager {
 private:
 	int mNumFiles;
-	FileInfo* mFileInfo;
+	vector<FileInfo> mFileInfo;
 	pthread_mutex_t fileMutex;
 
 private:
@@ -77,7 +81,7 @@ public:
 	 * If yes then returns true, and pass the FileInfo ptr as the parameter.
 	 * Else return false
 	 */
-	int fileExists(char* fileName);
+	int fileExists(string fileName);
 
     void UpdateFilesListDoc(int id, string name);
 
@@ -89,7 +93,7 @@ public:
     bool addFileToDisk(int idx);
 
     //Add file to cache when Peer is starting to receive the file
-	int addFileToCache(char* file_name, int file_size);
+	int addFileToCache(string file_name, int file_size);
 
     //print all the files for the peer following info:
     //id, name, complete

@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <iostream>
+#include <sstream>
 #include <assert.h>
 #include "file_manager.h"
 
@@ -30,22 +31,28 @@ FileManager::~FileManager()
         pthread_mutex_destroy (&mFileInfo[i].fMutex);
 
         if (mFileInfo[i].fp != NULL) {
-
             fclose(mFileInfo[i].fp);
         }
     }
-    //destructor
-    if (mFileInfo != NULL){
-        free (mFileInfo);
-    }
+    mFileInfo.clear();
+}
+
+vector<string> splitdelim(string str, char delimiter) {
+  vector<string> internal;
+  stringstream ss(str); // Turn the string into a stream.
+  string tok;
+
+  while(getline(ss, tok, delimiter)) {
+    internal.push_back(tok);
+  }
+  return internal;
 }
 
 bool FileManager::cacheFilesList()
 {
     bool success = false;
 
-    //check if files_list.txt exists
-    //Read info file
+    // Check if files_list.txt exists. Read info file
     ifstream file (FILES_INFO_PATH);
 
     if (!file.good()) {
@@ -54,8 +61,7 @@ bool FileManager::cacheFilesList()
         ofstream outfile (FILES_INFO_PATH);
         mNumFiles = 0;
         success = true;
-    }
-    else {
+    } else {
         string str;
 
         if (getline (file, str)){
@@ -63,48 +69,36 @@ bool FileManager::cacheFilesList()
             printf ("[FileManager] Num of files:%d\n", mNumFiles);
         }
 
-        //allocate memory based on # of Files
-        mFileInfo = (FileInfo*)calloc(mNumFiles, sizeof (FileInfo));
-
         //Parse the rest of the file and store file names to mFileInfo
         int i = 0;
-        string::size_type pos = 0;
-        string::size_type l_pos =0;
-        char tmp[20];
-
         while (getline(file, str)) {
             assert (i < mNumFiles);
 
-            pos = str.find_first_of(',', l_pos);
-
-            strncpy(tmp, str.c_str(), pos);
-            tmp[pos] = '\0';
+            vector<string> fileinfo = splitdelim(str, ',');
+            mFileInfo.emplace_back();
 
             //Initialize mutex
             pthread_mutex_init( &mFileInfo[i].fMutex, NULL);
 
             //Store file ID
-            mFileInfo[i].fileId = atoi(tmp);
+            mFileInfo[i].fileId = stoi(fileinfo[0]);
             printf("[FileManager] File Id:%d,", mFileInfo[i].fileId);
-            strncpy(tmp, str.c_str()+pos+1, str.length()-pos-1); 
-            tmp[str.length()-pos-1] = '\0';
 
             //Store file Name
-            strncpy(mFileInfo[i].fileName, str.c_str()+pos+1, str.length()-pos-1); 
-            mFileInfo[i].fileName[str.length()-pos-1] = '\0';
-            printf(" Name:%s,", mFileInfo[i].fileName);
+            mFileInfo[i].fileName = fileinfo[1];
+            printf(" Name:%s,", mFileInfo[i].fileName.c_str());
 
             //File is complete
             mFileInfo[i].complete = true;
 
             //Open file and determine # of chunks
-            FILE *infile;
-            infile = fopen(mFileInfo[i].fileName, "r");
+            FILE *infile = fopen(mFileInfo[i].fileName.c_str(), "r");
             if (infile == NULL){
                 printf ("\n\n[FileManager] ERROR Could not open file %s.\n\n",
-                        mFileInfo[i].fileName);
+                        mFileInfo[i].fileName.c_str());
                 continue;
             }
+
             fseek(infile, 0, SEEK_END);
             int file_size = ftell(infile);
             printf(" Size:%d,", file_size);
@@ -120,13 +114,10 @@ bool FileManager::cacheFilesList()
             fclose(infile);
 
             i++;
-
         }
-
         file.close();
         success = true;
     }
-
     return success;
 }
 
@@ -156,7 +147,7 @@ bool FileManager::fileExists(int fileId)
 }
 
 // overload
-int FileManager::fileExists(char* fileName)
+int FileManager::fileExists(string fileName)
 {
     int i = 0;
 
@@ -170,19 +161,19 @@ int FileManager::fileExists(char* fileName)
     while (i < local_mNumFiles) {
 
         pthread_mutex_lock( &mFileInfo[i].fMutex );
-            if ( strcmp(fileName, mFileInfo[i].fileName) == 0 ) {
-                pthread_mutex_unlock( &mFileInfo[i].fMutex );
+        if (fileName.compare(mFileInfo[i].fileName) == 0) {
+          pthread_mutex_unlock( &mFileInfo[i].fMutex );
 
-                printf("[FileManager] File %s exists!\n", fileName);
-                return i;
-            }
+          printf("[FileManager] File %s exists!\n", fileName.c_str());
+          return i;
+        }
         pthread_mutex_unlock( &mFileInfo[i].fMutex );
         i++;
     }
 
-    printf("[FileManager::%s] File %s does NOT exist\n",__func__ ,fileName);
+    printf("[FileManager::%s] File %s does NOT exist\n",__func__ ,fileName.c_str());
     return -1;
-}   
+} 
 
 void FileManager::UpdateFilesListDoc(int id, string name) {
     ifstream ifs;
@@ -223,45 +214,36 @@ bool FileManager::addFileToDisk(int idx)
     pthread_mutex_unlock( &file->fMutex );
 
     pthread_mutex_lock( &fileMutex );
-         UpdateFilesListDoc(file->fileId, string(file->fileName));
+         UpdateFilesListDoc(file->fileId, file->fileName);
     pthread_mutex_unlock( &fileMutex );
 
     return true;
 }
 
 
-int FileManager::addFileToCache(char* file_name, int file_size)
+int FileManager::addFileToCache(string file_name, int file_size)
 {
-    int _nFiles = 0;  
+    int _nFiles = 0;
+
     pthread_mutex_lock( &fileMutex );
+    cout << "[FileManager] Num files = " << mNumFiles << endl;
 
-    FileInfo* tmp = (FileInfo*)calloc((mNumFiles+1), sizeof (FileInfo));
-    //FileInfo* tmp2 = &mFileInfo[0];
+    mFileInfo.emplace_back();
 
+    mFileInfo[mNumFiles].fileId = mNumFiles;
+    mFileInfo[mNumFiles].fileName = file_name;
+    mFileInfo[mNumFiles].complete = false;
+    mFileInfo[mNumFiles].file_size = file_size;
+    pthread_mutex_init( &mFileInfo[mNumFiles].fMutex, NULL);
 
-    cout << "[FileManager] Size of Cache = " <<
-        (sizeof(FileInfo)*mNumFiles) << " Num files = " << mNumFiles << endl;
-    memcpy (tmp, mFileInfo, sizeof(FileInfo)*mNumFiles);
-
-    tmp[mNumFiles].fileId = mNumFiles;
-    strncpy (tmp[mNumFiles].fileName, file_name, strlen(file_name));
-    tmp[mNumFiles].complete = false;
-    tmp[mNumFiles].file_size = file_size;
-    pthread_mutex_init( &tmp[mNumFiles].fMutex, NULL);
-
-    FILE* fp = fopen(file_name, "w");
+    FILE* fp = fopen(file_name.c_str(), "w");
     fclose(fp);
 
-    mNumFiles++;
     _nFiles = mNumFiles;
-    
-    free(mFileInfo);
-    mFileInfo = NULL;
-
-    mFileInfo = &tmp[0];
+    mNumFiles++;
     pthread_mutex_unlock( &fileMutex );
 
-    return (_nFiles-1);
+    return _nFiles;
 }
 
 bool FileManager::fileWrite(int idx, int start, int size, void* buf) {
@@ -283,7 +265,7 @@ bool FileManager::fileWrite(int idx, int start, int size, void* buf) {
 
         //If file ptr is NULL open the file
         if (mFileInfo[idx].fp == NULL){
-            mFileInfo[idx].fp = fopen(mFileInfo[idx].fileName, "r+");
+            mFileInfo[idx].fp = fopen(mFileInfo[idx].fileName.c_str(), "r+");
         }
 
         fseek(mFileInfo[idx].fp, start, SEEK_SET); // seek to 'start'
@@ -295,8 +277,8 @@ bool FileManager::fileWrite(int idx, int start, int size, void* buf) {
     }
 }
 
-bool FileManager::fileRead(int idx, int start, int size, void* buf) {
-    
+bool FileManager::fileRead(int idx, int start, int size, void* buf)
+{
     int local_mNumFiles;
 
     pthread_mutex_lock( &fileMutex );
@@ -307,13 +289,12 @@ bool FileManager::fileRead(int idx, int start, int size, void* buf) {
         printf ("[FileManager::%s] ERROR index %d is invalid."
                 "Total Num. of files = %d",__func__, idx, local_mNumFiles);
         return false;
-    }
-    else{ 
+    } else {
         pthread_mutex_lock( &mFileInfo[idx].fMutex );
 
         //If file ptr is NULL open the file
         if (mFileInfo[idx].fp == NULL){
-            mFileInfo[idx].fp = fopen(mFileInfo[idx].fileName, "r+");
+            mFileInfo[idx].fp = fopen(mFileInfo[idx].fileName.c_str(), "r+");
         }
 
         fseek(mFileInfo[idx].fp, start, SEEK_SET); // seek to 'start'
@@ -326,8 +307,8 @@ bool FileManager::fileRead(int idx, int start, int size, void* buf) {
 }
 
 // updates and returns next..
-int FileManager::updateChunks(int idx){
-
+int FileManager::updateChunks(int idx)
+{
     int local_mNumFiles;
     int nextIdx = -1;
 
@@ -339,8 +320,7 @@ int FileManager::updateChunks(int idx){
         printf ("[FileManager::%s] ERROR index %d is invalid. "
                 "Total Num. of files = %d",__func__, idx, local_mNumFiles);
         return -1;
-    }
-    else{
+    } else {
         pthread_mutex_lock( &mFileInfo[idx].fMutex );
             nextIdx = mFileInfo[idx].totChunksExisting;
             mFileInfo[idx].totChunksExisting += 1;
@@ -353,14 +333,13 @@ int FileManager::updateChunks(int idx){
 void FileManager::printFilesList()
 {
     pthread_mutex_lock( &fileMutex );
-    if (mNumFiles == 0){
+    if (mNumFiles == 0) {
         printf("[FileManager] There are no existing files for the Peer!\n");
-    }
-    else {
+    } else {
         printf("[FileManager] Printing list of existing files for the Peer:\n");
         for (int i = 0; i < mNumFiles; i++){
-            printf("File Id = %d, Name = %s\n", mFileInfo[i].fileId,mFileInfo[i].fileName);
-        }  
+            printf("File Id = %d, Name = %s\n", mFileInfo[i].fileId,mFileInfo[i].fileName.c_str());
+        }
         printf("\n\n");
     }
     pthread_mutex_unlock( &fileMutex );
@@ -379,13 +358,11 @@ int FileManager::getFileSize(int fileId)
         printf ("[FileManager::%s] ERROR index %d is invalid."
                 "Total Num. of files = %d",__func__, fileId, local_mNumFiles);
         return -1;
-    }
-    else{
+    } else {
         pthread_mutex_lock( &mFileInfo[fileId].fMutex );
             _fileSize = mFileInfo[fileId].file_size;
         pthread_mutex_unlock( &mFileInfo[fileId].fMutex );
         return _fileSize;
     }
-
 }
 
