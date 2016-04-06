@@ -189,6 +189,21 @@ bool TorrentManager::updatePeersInfo() {
     return true;
 }
 
+void TorrentManager::printHelper(){
+
+    printf("\n********************************\n");
+    printf("*********Commands List**********\n");
+    printf("********************************\n");
+    printf("1- Download file: 'd' <filename>\n");
+    printf("   e.g: d samplefile.txt\n");
+    printf("2- Get Files list: 'g'\n");
+    printf("3- Quit torrent application: 'q'\n");
+    printf("4- Print files status: 's'\n");
+    printf("5- Remove local file: r <filename>\n");
+    printf("********************************\n\n");
+
+}
+
 bool TorrentManager::run()
 {
     int numFilesDown = 0; // num of files being downloaded
@@ -207,6 +222,8 @@ bool TorrentManager::run()
         return false;
     }
 
+    printHelper();
+
     // Start reading terminal for user input
     printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     printf("Reading user input from terminal\n\n");
@@ -217,16 +234,7 @@ bool TorrentManager::run()
         fgets(input, 20, stdin);
 
         if (input[0] == 'h') {
-            printf("\n********************************\n");
-            printf("*********Commands List**********\n");
-            printf("********************************\n");
-            printf("1- Download file: 'd' <filename>\n");
-            printf("   e.g: d samplefile.txt\n");
-            printf("2- Get Files list: 'g'\n");
-            printf("3- Quit torrent application: 'q'\n");
-            printf("4- Print files status: 's'\n");
-            printf("5- Remove local file: r <filename>\n");
-            printf("********************************\n\n");
+            printHelper();
         }
         else if (input[0] == 'd') {
 

@@ -147,6 +147,9 @@ class TorrentManager {
          */
         bool run();
 
+        // Print Helper function with sample commands
+        void printHelper();
+
         /*
          *	Thread-Loop.
          *	1- wait on accept soccket until any client requests a file.
