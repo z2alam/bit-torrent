@@ -129,6 +129,13 @@ public:
     int updateChunks(int idx);
 
     int getFileSize(int fileId);
+
+    // Remove local file from (disk, cache, files_list.txt)
+    int removeLocalFile(char* fileName);
+
+    // Remove local file from files_list.txt, given id
+    int removeFilefromFilesList(int id);
+
 };
 
 #endif

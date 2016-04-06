@@ -225,6 +225,7 @@ bool TorrentManager::run()
             printf("2- Get Files list: 'g'\n");
             printf("3- Quit torrent application: 'q'\n");
             printf("4- Print files status: 's'\n");
+            printf("5- Remove local file: r <filename>\n");
             printf("********************************\n\n");
         }
         else if (input[0] == 'd') {
@@ -303,6 +304,33 @@ bool TorrentManager::run()
 
             printf("... Exiting Torrent application\n");
             break;
+        }
+        else if (input[0] == 'r') 
+        {
+            char file_name[FILE_PATH_SIZE];
+            strncpy(file_name, input+2, 18);
+            file_name[strlen(file_name)-1] = '\0';
+            printf("Removing File:%s ...\n", file_name);
+
+            if (strlen(file_name) == 0) {
+                printf("In valid argument - No file name provided\n");
+                continue;
+            } 
+            else {
+
+                int result = mFileMan->removeLocalFile(file_name);
+
+                if (result == 0){
+                    printf("Successfully removed File:%s.\n", file_name);
+                } 
+                else if (result == -1){
+                    printf("ERROR - Failed to remove the File:%s.\n", file_name);
+                }
+                else if (result == -2){
+                    printf("ERROR - File:%s does not exist\n", file_name);
+                }
+            }
+
         }
     }
 

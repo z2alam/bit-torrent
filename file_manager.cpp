@@ -194,6 +194,9 @@ void FileManager::UpdateFilesListDoc(int id, string name) {
         data += to_string(id) + "," + name;
         ifs.close();
     }
+    else {
+        printf("[FileManager::%s] Error opening file %s\n",__func__ ,FILES_INFO_PATH);
+    }
 
     ofstream ofs;
     ofs.open(FILES_INFO_PATH);
@@ -334,7 +337,7 @@ void FileManager::printFilesList()
 {
     pthread_mutex_lock( &fileMutex );
     if (mNumFiles == 0) {
-        printf("[FileManager] There are no existing files for the Peer!\n");
+        printf("[FileManager] There are no existing files for the Peer!\n\n");
     } else {
         printf("[FileManager] Printing list of existing files for the Peer:\n");
         for (int i = 0; i < mNumFiles; i++){
@@ -366,3 +369,125 @@ int FileManager::getFileSize(int fileId)
     }
 }
 
+
+int FileManager::removeLocalFile(char* fileName)
+{
+
+    int result = -1;
+    unsigned int file_idx = -1;
+    unsigned int file_id = -1;
+    int local_mNumFiles;
+    bool fileExists = false;
+
+    pthread_mutex_lock( &fileMutex );
+        local_mNumFiles = mNumFiles;
+    pthread_mutex_unlock( &fileMutex );
+
+    int i = 0;
+
+    //Find the index of the file in the Cache: mFileInfo
+    while (i < local_mNumFiles) {
+
+        pthread_mutex_lock( &mFileInfo[i].fMutex );
+        //if ( strcmp(fileName, mFileInfo[i].fileName) == 0 ) 
+        if ( fileName == mFileInfo[i].fileName ) {
+            pthread_mutex_unlock( &mFileInfo[i].fMutex );
+
+            printf("[FileManager] File %s exists!\n", fileName);
+            fileExists = true;
+            file_idx = i;
+            file_id = mFileInfo[i].fileId;
+            break;
+        }
+        pthread_mutex_unlock( &mFileInfo[i].fMutex );
+        i++;
+    }
+
+    //If File does not exit - exit with error
+    if (fileExists == false) {
+        result = -2;
+    }
+    else {
+        //---------------
+        //Remove the file
+        //---------------
+
+        pthread_mutex_lock( &fileMutex );
+
+        //
+        //remove from cache
+        //
+        if (mFileInfo[file_idx].fp != NULL) {
+            fclose(mFileInfo[file_idx].fp);
+        }
+        if (mNumFiles > 0) mNumFiles--;
+
+
+        if (mFileInfo.size() > file_idx){
+            mFileInfo.erase(mFileInfo.begin() + file_idx);
+        }
+
+        //
+        //remove file from files_list - since only 1 file, can remove everything
+        //
+        int success = removeFilefromFilesList(file_id);
+        if (success != 0) {
+            return success;
+        }
+
+        //
+        //Remove from the local dir
+        //
+        char call2[512] = {};
+        strcat(call2, "\\rm -f ");
+        strcat(call2, fileName);
+        printf("[FileManager] Making System call:\n $ %s \n\n", call2);
+        system (call2);
+
+        pthread_mutex_unlock( &fileMutex );
+
+        result = 0;
+    }
+
+    return result;
+    
+}
+
+int FileManager::removeFilefromFilesList(int id) {
+    
+    int result = -1;
+    ifstream ifs;
+    ifs.open(FILES_INFO_PATH);
+    string line;
+    string data;
+    int numFiles = 0;
+
+    if (ifs.is_open()) {
+        getline(ifs, line);
+        numFiles = atoi(line.c_str());
+
+        for (int i = 0; i < numFiles; ++i) {
+            getline(ifs, line);
+            int parse_id = stoi(line);
+            if (parse_id != id) {
+                data += line + "\n";
+            }
+        }
+
+        ifs.close();
+        result = 0;
+    }
+    else {
+        printf("[FileManager::%s] Error opening file %s\n",__func__ ,FILES_INFO_PATH);
+    }
+
+    ofstream ofs;
+    ofs.open(FILES_INFO_PATH);
+    if (ofs.is_open()) {
+        ofs << numFiles-1 << "\n";
+        ofs << data;
+        ofs.close();
+    }
+
+    return result;
+}
