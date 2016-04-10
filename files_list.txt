@@ -1,4 +1,4 @@
 3
 0,file.txt
-2,vid.mp4
+1,vid.mp4
 2,flower.jpg

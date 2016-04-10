@@ -214,20 +214,14 @@ bool FileManager::addFileToDisk(int idx)
 }
 
 
-int FileManager::addFileToCache(string file_name, int file_size)
+int FileManager::addFileToCache(string file_name, int file_size, int total_chunks)
 {
     int _nFiles = 0;
 
     pthread_mutex_lock( &fileMutex );
     cout << "[FileManager] Num files = " << mNumFiles << endl;
 
-    mFileInfo.emplace_back();
-
-    mFileInfo[mNumFiles].fileId = mNumFiles;
-    mFileInfo[mNumFiles].fileName = file_name;
-    mFileInfo[mNumFiles].complete = false;
-    mFileInfo[mNumFiles].file_size = file_size;
-    pthread_mutex_init( &mFileInfo[mNumFiles].fMutex, NULL);
+    mFileInfo.emplace_back(mNumFiles, file_name, file_size, total_chunks);
 
     FILE* fp = fopen(file_name.c_str(), "w");
     fclose(fp);
@@ -299,29 +293,61 @@ bool FileManager::fileRead(int idx, int start, int size, void* buf)
     }
 }
 
+int FileManager::getNextIdx(int file_id) {
+    if (mFileInfo[file_id].next_idx_stack.empty())
+        return -1;
+
+    int next = mFileInfo[file_id].next_idx_stack.top();
+    mFileInfo[file_id].next_idx_stack.pop();
+
+    if (mFileInfo[file_id].next_idx_stack.empty() && (next+1 < mFileInfo[file_id].totChunksPerFile))
+        mFileInfo[file_id].next_idx_stack.push(next+1);
+
+    return next;
+}
+
+void FileManager::markChunkDone(int file_id, int idx) {
+    mFileInfo[file_id].inprocess_chunks_idx.erase(idx);
+}
+
+void FileManager::markChunkInProcess(int file_id, int idx) {
+    mFileInfo[file_id].inprocess_chunks_idx.insert(idx);
+}
+
 // updates and returns next..
-int FileManager::updateChunks(int idx)
+int FileManager::updateChunks(int file_id, int chunk_idx_completed)
 {
     int local_mNumFiles;
-    int nextIdx = -1;
 
     pthread_mutex_lock( &fileMutex );
     local_mNumFiles = mNumFiles;
     pthread_mutex_unlock( &fileMutex );
 
-    if (idx >= local_mNumFiles) {
+    if (file_id >= local_mNumFiles) {
         printf ("[FileManager::%s] ERROR index %d is invalid. "
-                "Total Num. of files = %d",__func__, idx, local_mNumFiles);
+                "Total Num. of files = %d",__func__, file_id, local_mNumFiles);
         return -1;
     } else {
-        pthread_mutex_lock( &mFileInfo[idx].fMutex );
-            nextIdx = mFileInfo[idx].totChunksExisting;
-            mFileInfo[idx].totChunksExisting += 1;
-        pthread_mutex_unlock( &mFileInfo[idx].fMutex );
+        pthread_mutex_lock( &mFileInfo[file_id].fMutex );
+
+        int nextIdx = getNextIdx(file_id);
+        markChunkDone(file_id, chunk_idx_completed);
+        markChunkInProcess(file_id, nextIdx);
+        mFileInfo[file_id].totChunksExisting++;
+
+        pthread_mutex_unlock( &mFileInfo[file_id].fMutex );
         return nextIdx;
     }
 }
 
+void FileManager::markChunkFailure(int file_id, int idx) {
+    pthread_mutex_lock(&mFileInfo[idx].fMutex);
+
+    mFileInfo[file_id].next_idx_stack.push(idx);
+    markChunkDone(file_id, idx);
+
+    pthread_mutex_unlock(&mFileInfo[idx].fMutex);
+}
 
 void FileManager::printFilesList()
 {

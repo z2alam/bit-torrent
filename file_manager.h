@@ -15,6 +15,8 @@
 #include <fstream>
 #include <pthread.h>
 #include <vector>
+#include <stack>
+#include <unordered_set>
 
 #define FILE_PATH_SIZE 	50
 #define FILES_INFO_PATH "files_list.txt"
@@ -31,10 +33,22 @@ struct FileInfo {
 	int totChunksPerFile;
 	int totChunksExisting;	/* how much chunks available if not full? */
     int file_size;
+    stack<int> next_idx_stack; /* top() contains the next chunk need to be picked */
+    unordered_set<int> inprocess_chunks_idx; /* hashset of inprocess chunks */
 	pthread_mutex_t fMutex;
 
     FileInfo() : fileId(-1), fileName(""), complete(false), fp(NULL), totChunksPerFile(0),
-                    totChunksExisting(0), file_size(0) { }
+                    totChunksExisting(0), file_size(0) {
+        next_idx_stack.push(0);
+        pthread_mutex_init(&fMutex, NULL);
+    }
+
+    FileInfo(int file_id, string file_name, int file_size_, int total_chunks) :
+            fileId(file_id), fileName(file_name), complete(false), fp(NULL),
+            totChunksPerFile(total_chunks), totChunksExisting(0), file_size(file_size_) {
+        next_idx_stack.push(0);
+        pthread_mutex_init(&fMutex, NULL);
+    }
 };
 
 class FileManager {
@@ -93,7 +107,7 @@ public:
     bool addFileToDisk(int idx);
 
     //Add file to cache when Peer is starting to receive the file
-	int addFileToCache(string file_name, int file_size);
+	int addFileToCache(string file_name, int file_size, int total_chunks);
 
     //print all the files for the peer following info:
     //id, name, complete
@@ -126,7 +140,7 @@ public:
     /*
      * mFileInfo[idx].totChunksExisting++;
      */
-    int updateChunks(int idx);
+    int updateChunks(int idx, int chunk_idx_completed);
 
     int getFileSize(int fileId);
 
@@ -136,6 +150,29 @@ public:
     // Remove local file from files_list.txt, given id
     int removeFilefromFilesList(int id);
 
+    /* Return next unfinished chunk idx for the file.
+     * Uses stack to handle cases when a peer initially commit for sending a chunk
+     * and then it fails to do so. In that case the chunk idx will be pushed back
+     * to the stack, so that other active peer may pick it up!
+     *
+     * Return value = -1 indicates that no more idx needs to be processed
+     */
+    int getNextIdx(int file_id);
+
+    /* updates inprocess_chunks hashset
+     * Will be used to either indicate that the chunk has been completed
+     * or it has been abandoned.
+     */
+    void markChunkDone(int file_id, int idx);
+
+    /* updates inprocess_chunks hashset to indicate that the chunk is in process
+     */
+    void markChunkInProcess(int file_id, int idx);
+
+    /* Will be called when a peer committed for a chunk transfer, but failed to do so.
+     * It will add it back to the unfinished chunks stack.
+     */
+    void markChunkFailure(int file_id, int idx);
 };
 
 #endif

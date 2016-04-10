@@ -551,7 +551,6 @@ void* TorrentManager::sendData_v2(void* arg)
   int _totChunks = (_totSize / CHUNK_SIZE) + (((_totSize % CHUNK_SIZE) == 0) ? 0 : 1);
 
   while (1) {
-    //while (read(_socket, msgBuffer, 19) < 0);
     if (!TimedReadFromSocket(_socket, &msgBuffer[0], 19)) {
       // TODO: clean exit
     }
@@ -575,7 +574,6 @@ void* TorrentManager::sendData_v2(void* arg)
     _fileMan->fileRead(_fileId, _start, _size, _buffer);
 
     // reading data from the peer
-    //while( write(_socket, _buffer, _size) < 0);
     if (!TimedWriteFromSocket(_socket, &_buffer[0], _size)) {
       // TODO: clean exit
     }
@@ -844,7 +842,7 @@ void* TorrentManager::connectPeers(void* arg)
 
     // Get corresponding fileInfo
     if (_fileId == -1) {
-      if ((_fileId = fileMan->addFileToCache(file_name, _fileSize)) == -1) {
+      if ((_fileId = fileMan->addFileToCache(file_name, _fileSize, _fileTotChunks)) == -1) {
         printf("%s: ERROR: Cannot add file to cache", __func__);
         goto error;
       }
@@ -949,9 +947,8 @@ void* TorrentManager::receiveData_v2(void* arg)
 
   int _chunksReceived = 0;
 
-  _idx = _fileMan->updateChunks(_fileId);
+  _idx = _fileMan->updateChunks(_fileId, -1);
   sprintf(msgBuffer, "%d", _idx);
-  // while( write(_socket, msgBuffer, 19) < 0);
   if (!TimedWriteFromSocket(_socket, &msgBuffer[0], 19)) {
     // TODO: clean exit
   }
@@ -965,7 +962,6 @@ void* TorrentManager::receiveData_v2(void* arg)
     //        ".. chunkSize:%d\n", __func__, _idx, _totChunks, _totSize,
     //        _chunkStart, _chunkSize);
 
-    // while (read(_socket, _buffer, _chunkSize) < 0);
     if (!TimedReadFromSocket(_socket, &_buffer[0], _chunkSize)) {
       // TODO: clean exit
     }
@@ -973,18 +969,15 @@ void* TorrentManager::receiveData_v2(void* arg)
     // write chunk to file
     _fileMan->fileWrite(_fileId, _chunkStart, _chunkSize, _buffer);
 
-    _idx = _fileMan->updateChunks(_fileId);
+    _idx = _fileMan->updateChunks(_fileId, _idx);
+
     // notify other client to exit
-    if (_idx >= _totChunks) {
+    if (_idx == -1) {
       sprintf(msgBuffer, "e");
-      // while( write(_socket, msgBuffer, 19) < 0);
-      if (!TimedWriteFromSocket(_socket, &msgBuffer[0], 19)) {
-        // TODO: clean exit
-      }
+      TimedWriteFromSocket(_socket, &msgBuffer[0], 19);
       break;
     } else {
       sprintf(msgBuffer, "%d", _idx);
-      // while( write(_socket, msgBuffer, 19) < 0);
       if (!TimedWriteFromSocket(_socket, &msgBuffer[0], 19)) {
         // TODO: clean exit
       }
@@ -1045,7 +1038,7 @@ void* TorrentManager::receiveData(void* arg)
 
     // write chunk to file
     _fileMan->fileWrite(_fileId, _tmpStart, _tmpSize, _buffer);
-    _fileMan->updateChunks(_fileId);
+    _fileMan->updateChunks(_fileId, -1);
 
     // handshake..
     while( write(_socket, msgBuffer, 19) < 0 );
