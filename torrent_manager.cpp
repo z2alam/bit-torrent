@@ -137,7 +137,7 @@ TorrentManager::~TorrentManager()
   pthread_mutex_destroy(&mMutex);
 }
 
-vector<string> split(string str, char delimiter) {
+vector<string> TorrentManager::split(string str, char delimiter) {
   vector<string> internal;
   stringstream ss(str); // Turn the string into a stream.
   string tok;

@@ -147,6 +147,12 @@ class TorrentManager {
          */
         bool run();
 
+        /* Utility function; given a delim-separated string and delimeter,
+         * return a vector of string with delim-separated values (strings).
+         */
+        static vector<string> split(string str, char delim);
+
+    private:
         // Print Helper function with sample commands
         void printHelper();
 

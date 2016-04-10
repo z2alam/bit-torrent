@@ -13,6 +13,7 @@
 #include <sstream>
 #include <assert.h>
 #include "file_manager.h"
+#include "torrent_manager.h"
 
 using namespace std;
 
@@ -35,17 +36,6 @@ FileManager::~FileManager()
         }
     }
     mFileInfo.clear();
-}
-
-vector<string> splitdelim(string str, char delimiter) {
-  vector<string> internal;
-  stringstream ss(str); // Turn the string into a stream.
-  string tok;
-
-  while(getline(ss, tok, delimiter)) {
-    internal.push_back(tok);
-  }
-  return internal;
 }
 
 bool FileManager::cacheFilesList()
@@ -74,7 +64,7 @@ bool FileManager::cacheFilesList()
         while (getline(file, str)) {
             assert (i < mNumFiles);
 
-            vector<string> fileinfo = splitdelim(str, ',');
+            vector<string> fileinfo = TorrentManager::split(str, ',');
             mFileInfo.emplace_back();
 
             //Initialize mutex
