@@ -360,9 +360,8 @@ int FileManager::getFileSize(int fileId)
 }
 
 
-int FileManager::removeLocalFile(char* fileName)
+int FileManager::removeLocalFile(string fileName)
 {
-
     int result = -1;
     unsigned int file_idx = -1;
     unsigned int file_id = -1;
@@ -379,11 +378,10 @@ int FileManager::removeLocalFile(char* fileName)
     while (i < local_mNumFiles) {
 
         pthread_mutex_lock( &mFileInfo[i].fMutex );
-        //if ( strcmp(fileName, mFileInfo[i].fileName) == 0 ) 
-        if ( fileName == mFileInfo[i].fileName ) {
+        if (fileName.compare(mFileInfo[i].fileName) == 0) {
             pthread_mutex_unlock( &mFileInfo[i].fMutex );
 
-            printf("[FileManager] File %s exists!\n", fileName);
+            printf("[FileManager] File %s exists!\n", fileName.c_str());
             fileExists = true;
             file_idx = i;
             file_id = mFileInfo[i].fileId;
@@ -401,46 +399,35 @@ int FileManager::removeLocalFile(char* fileName)
         //---------------
         //Remove the file
         //---------------
-
         pthread_mutex_lock( &fileMutex );
 
-        //
         //remove from cache
-        //
         if (mFileInfo[file_idx].fp != NULL) {
             fclose(mFileInfo[file_idx].fp);
         }
-        if (mNumFiles > 0) mNumFiles--;
 
+        if (mNumFiles > 0)
+            mNumFiles--;
 
-        if (mFileInfo.size() > file_idx){
+        if (mFileInfo.size() > file_idx) {
             mFileInfo.erase(mFileInfo.begin() + file_idx);
         }
 
-        //
         //remove file from files_list - since only 1 file, can remove everything
-        //
         int success = removeFilefromFilesList(file_id);
         if (success != 0) {
             return success;
         }
 
-        //
         //Remove from the local dir
-        //
-        char call2[512] = {};
-        strcat(call2, "\\rm -f ");
-        strcat(call2, fileName);
-        printf("[FileManager] Making System call:\n $ %s \n\n", call2);
-        system (call2);
+        string syscall = "\\rm -f " + fileName; 
+        printf("[FileManager] Making System call:\n $ %s \n\n", syscall.c_str());
+        system (syscall.c_str());
 
         pthread_mutex_unlock( &fileMutex );
-
         result = 0;
     }
-
     return result;
-    
 }
 
 int FileManager::removeFilefromFilesList(int id) {

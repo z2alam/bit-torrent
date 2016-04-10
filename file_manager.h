@@ -131,7 +131,7 @@ public:
     int getFileSize(int fileId);
 
     // Remove local file from (disk, cache, files_list.txt)
-    int removeLocalFile(char* fileName);
+    int removeLocalFile(string fileName);
 
     // Remove local file from files_list.txt, given id
     int removeFilefromFilesList(int id);

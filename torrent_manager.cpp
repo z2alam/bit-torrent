@@ -227,32 +227,28 @@ bool TorrentManager::run()
   // Start reading terminal for user input
   printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
   printf("Reading user input from terminal\n\n");
-  char input[20];
+  string input;
   while (true) {
 
     printf("Enter command: (Type 'h' for help)\n");
-    fgets(input, 20, stdin);
+    getline(cin, input);
 
     if (input[0] == 'h') {
       printHelper();
     }
     else if (input[0] == 'd') {
+      string file_name = input.substr(2);
 
-      char file_name[FILE_PATH_SIZE];
-      strncpy(file_name, input+2, 18);
-      file_name[strlen(file_name)-1] = '\0';
-
-      if (strlen(file_name) == 0) {
+      if (file_name.size() == 0) {
         printf("In valid argument - No file name provided\n");
         continue;
       }
       else if (mFileMan->fileExists(file_name) != -1) {
         // file exists - no need to download
-        printf("File:%s already exists!!\n", file_name);
+        printf("File:%s already exists!!\n", file_name.c_str());
         continue;
       }
       else {
-
         pthread_mutex_lock( &mMutex );
         if (numFilesDown == DOWNLOAD_LIMIT) {
           pthread_mutex_unlock( &mMutex );
@@ -274,18 +270,17 @@ bool TorrentManager::run()
           pthread_mutex_unlock( &mMutex );
         }
 
-        printf("Downloading file: %s\n", file_name);
+        printf("Downloading file: %s\n", file_name.c_str());
         threadParams.fileName = &file_name[0]; 
         threadParams.threadStack = &numFilesDown;
         threadParams.threadInfo = &mConnThreadInfo[idx];
 
-
-        if(pthread_create(&mConnThreadInfo[idx].thread, NULL,
-                          &connectPeers, &threadParams)) {
+        if (pthread_create(&mConnThreadInfo[idx].thread, NULL, &connectPeers, &threadParams)) {
           printf("ERROR: Connect thread creation failed\n");
           mConnThreadInfo[idx].status = false;
           continue;
         }
+
         pthread_mutex_lock( &mMutex );
         numFilesDown++;
         pthread_mutex_unlock( &mMutex );
@@ -314,12 +309,10 @@ bool TorrentManager::run()
       break;
     }
     else if (input[0] == 'r') {
-        char file_name[FILE_PATH_SIZE];
-        strncpy(file_name, input+2, 18);
-        file_name[strlen(file_name)-1] = '\0';
-        printf("Removing File:%s ...\n", file_name);
+        string file_name = input.substr(2);
+        printf("Removing File:%s ...\n", file_name.c_str());
 
-        if (strlen(file_name) == 0) {
+        if (file_name.size() == 0) {
           printf("In valid argument - No file name provided\n");
           continue;
         }
@@ -327,13 +320,13 @@ bool TorrentManager::run()
           int result = mFileMan->removeLocalFile(file_name);
 
           if (result == 0){
-            printf("Successfully removed File:%s.\n", file_name);
+            printf("Successfully removed File:%s.\n", file_name.c_str());
           }
           else if (result == -1){
-            printf("ERROR - Failed to remove the File:%s.\n", file_name);
+            printf("ERROR - Failed to remove the File:%s.\n", file_name.c_str());
           }
           else if (result == -2){
-            printf("ERROR - File:%s does not exist\n", file_name);
+            printf("ERROR - File:%s does not exist\n", file_name.c_str());
           }
         }
       }
