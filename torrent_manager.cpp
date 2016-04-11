@@ -552,7 +552,7 @@ void* TorrentManager::sendData_v2(void* arg)
 
   while (1) {
     if (!TimedReadFromSocket(_socket, &msgBuffer[0], 19)) {
-      // TODO: clean exit
+        break;
     }
 
     if (msgBuffer[0] == 'e') {
@@ -575,7 +575,7 @@ void* TorrentManager::sendData_v2(void* arg)
 
     // reading data from the peer
     if (!TimedWriteFromSocket(_socket, &_buffer[0], _size)) {
-      // TODO: clean exit
+        break;
     }
 
     /*
@@ -950,42 +950,44 @@ void* TorrentManager::receiveData_v2(void* arg)
   _idx = _fileMan->updateChunks(_fileId, -1);
   sprintf(msgBuffer, "%d", _idx);
   if (!TimedWriteFromSocket(_socket, &msgBuffer[0], 19)) {
-    // TODO: clean exit
-  }
+    _fileMan->markChunkFailure(_fileId, _idx);
+  } else {
+    // run the thread until chunk queue is empty
+    while (1) {
+        // calculating the chunk size of ith Chunk
+        _chunkStart = _idx * CHUNK_SIZE;
+        _chunkSize = (_idx == _totChunks-1) ? _totSize - _chunkStart : CHUNK_SIZE;
+        //DEBUG_PRINT("%s: Idx:%d.. totChunks:%d.. totSize:%d.. chunkStart:%d"
+        //        ".. chunkSize:%d\n", __func__, _idx, _totChunks, _totSize,
+        //        _chunkStart, _chunkSize);
 
-  // run the thread until chunk queue is empty
-  while (1) {
-    // calculating the chunk size of ith Chunk
-    _chunkStart = _idx * CHUNK_SIZE;
-    _chunkSize = (_idx == _totChunks-1) ? _totSize - _chunkStart : CHUNK_SIZE;
-    //DEBUG_PRINT("%s: Idx:%d.. totChunks:%d.. totSize:%d.. chunkStart:%d"
-    //        ".. chunkSize:%d\n", __func__, _idx, _totChunks, _totSize,
-    //        _chunkStart, _chunkSize);
+        if (!TimedReadFromSocket(_socket, &_buffer[0], _chunkSize)) {
+          _fileMan->markChunkFailure(_fileId, _idx);
+          break;
+        }
 
-    if (!TimedReadFromSocket(_socket, &_buffer[0], _chunkSize)) {
-      // TODO: clean exit
+        // write chunk to file
+        _fileMan->fileWrite(_fileId, _chunkStart, _chunkSize, _buffer);
+
+        _idx = _fileMan->updateChunks(_fileId, _idx);
+
+        // notify other client to exit
+        if (_idx == -1) {
+          sprintf(msgBuffer, "e");
+          TimedWriteFromSocket(_socket, &msgBuffer[0], 19);
+          break;
+        } else {
+          sprintf(msgBuffer, "%d", _idx);
+          if (!TimedWriteFromSocket(_socket, &msgBuffer[0], 19)) {
+            _fileMan->markChunkFailure(_fileId, _idx);
+            break;
+          }
+        }
+
+        DEBUG_PRINT("%s: Chunk-Received:%d, start:%d, size:%d\n", __func__, _idx,
+                    _chunkStart, _chunkSize);
+        _chunksReceived++;
     }
-
-    // write chunk to file
-    _fileMan->fileWrite(_fileId, _chunkStart, _chunkSize, _buffer);
-
-    _idx = _fileMan->updateChunks(_fileId, _idx);
-
-    // notify other client to exit
-    if (_idx == -1) {
-      sprintf(msgBuffer, "e");
-      TimedWriteFromSocket(_socket, &msgBuffer[0], 19);
-      break;
-    } else {
-      sprintf(msgBuffer, "%d", _idx);
-      if (!TimedWriteFromSocket(_socket, &msgBuffer[0], 19)) {
-        // TODO: clean exit
-      }
-    }
-
-    DEBUG_PRINT("%s: Chunk-Received:%d, start:%d, size:%d\n", __func__, _idx,
-                _chunkStart, _chunkSize);
-    _chunksReceived++;
   }
 
   printf("%s: Thread:%d exiting, chunks-received:%d\n", __func__, _threadId,

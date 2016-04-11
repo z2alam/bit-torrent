@@ -341,12 +341,12 @@ int FileManager::updateChunks(int file_id, int chunk_idx_completed)
 }
 
 void FileManager::markChunkFailure(int file_id, int idx) {
-    pthread_mutex_lock(&mFileInfo[idx].fMutex);
+    pthread_mutex_lock(&mFileInfo[file_id].fMutex);
 
     mFileInfo[file_id].next_idx_stack.push(idx);
     markChunkDone(file_id, idx);
 
-    pthread_mutex_unlock(&mFileInfo[idx].fMutex);
+    pthread_mutex_unlock(&mFileInfo[file_id].fMutex);
 }
 
 void FileManager::printFilesList()
