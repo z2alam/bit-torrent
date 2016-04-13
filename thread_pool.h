@@ -9,7 +9,7 @@
 #include <pthread.h>
 
 #define MAX_RECEIVER_THREADS	15
-#define MAX_SENDER_THREADS	5
+#define MAX_SENDER_THREADS	15
 struct ThreadInfo {
   bool available;	/* availability of thread */
   int thread_id; //array index

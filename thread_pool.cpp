@@ -9,7 +9,6 @@
 #include <sys/types.h>
 #include <assert.h>
 
-
 ThreadPool::ThreadPool() : mSenderNum(0), mReceiverNum(0)
 {
     //constructor
@@ -34,7 +33,6 @@ ThreadPool::ThreadPool() : mSenderNum(0), mReceiverNum(0)
 ThreadPool::~ThreadPool()
 {
     //destructor
-    
     //Cancel threads in progress
     for (int i = 0; i < MAX_RECEIVER_THREADS; i++){
         if (mRecThreads[i].available == false){
@@ -49,6 +47,7 @@ ThreadPool::~ThreadPool()
             pthread_join (mSenThreads[i].thread, NULL);
         }
     }
+
     //destroy all mutex
     for (int i = 0; i < MAX_RECEIVER_THREADS; i++){
         pthread_mutex_destroy (&mRecThreads[i].tMutex);

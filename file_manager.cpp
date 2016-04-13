@@ -79,29 +79,39 @@ bool FileManager::cacheFilesList()
             printf(" Name:%s,", mFileInfo[i].fileName.c_str());
 
             //File is complete
-            mFileInfo[i].complete = true;
-
-            //Open file and determine # of chunks
-            FILE *infile = fopen(mFileInfo[i].fileName.c_str(), "r");
-            if (infile == NULL){
-                printf ("\n\n[FileManager] ERROR Could not open file %s.\n\n",
-                        mFileInfo[i].fileName.c_str());
-                continue;
+            if (fileinfo.size() != 2) {
+              mFileInfo[i].totChunksExisting = stoi(fileinfo[2]);
+              mFileInfo[i].totChunksPerFile = stoi(fileinfo[3]);
+              mFileInfo[i].file_size = stoi(fileinfo[4]);
             }
 
-            fseek(infile, 0, SEEK_END);
-            int file_size = ftell(infile);
-            printf(" Size:%d,", file_size);
-            mFileInfo[i].file_size = file_size;
-            mFileInfo[i].fp = NULL;
+            if (mFileInfo[i].totChunksPerFile == mFileInfo[i].totChunkExisting) {
+              mFileInfo[i].complete = true;
 
-            mFileInfo[i].totChunksPerFile = (file_size / CHUNK_SIZE) + 
-                (((file_size % CHUNK_SIZE) == 0) ? 0 : 1);
-            printf(" Num. Chunks:%d\n", mFileInfo[i].totChunksPerFile);
+              //Open file and determine # of chunks
+              FILE *infile = fopen(mFileInfo[i].fileName.c_str(), "r");
+              if (infile == NULL){
+                  printf ("\n\n[FileManager] ERROR Could not open file %s.\n\n",
+                          mFileInfo[i].fileName.c_str());
+                  continue;
+              }
 
-            //Since file is complete total existing chunks equal total chunks per file
-            mFileInfo[i].totChunksExisting = mFileInfo[i].totChunksPerFile;
-            fclose(infile);
+              fseek(infile, 0, SEEK_END);
+              int file_size = ftell(infile);
+              printf(" Size:%d,", file_size);
+              mFileInfo[i].file_size = file_size;
+              mFileInfo[i].fp = NULL;
+
+              mFileInfo[i].totChunksPerFile = (file_size / CHUNK_SIZE) + 
+                  (((file_size % CHUNK_SIZE) == 0) ? 0 : 1);
+              printf(" Num. Chunks:%d\n", mFileInfo[i].totChunksPerFile);
+
+              //Since file is complete total existing chunks equal total chunks per file
+              mFileInfo[i].totChunksExisting = mFileInfo[i].totChunksPerFile;
+              fclose(infile);
+            } else {
+              mFileInfo[i].next_idx_stack.push(mFileInfo[i].totChunksExisting);
+            }
 
             i++;
         }
@@ -149,7 +159,6 @@ int FileManager::fileExists(string fileName)
     pthread_mutex_unlock( &fileMutex );
 
     while (i < local_mNumFiles) {
-
         pthread_mutex_lock( &mFileInfo[i].fMutex );
         if (fileName.compare(mFileInfo[i].fileName) == 0) {
           pthread_mutex_unlock( &mFileInfo[i].fMutex );
@@ -163,7 +172,53 @@ int FileManager::fileExists(string fileName)
 
     printf("[FileManager::%s] File %s does NOT exist\n",__func__ ,fileName.c_str());
     return -1;
-} 
+}
+
+void FileManager::UpdateFilesListDoc(FileInfo &info, int min_idx) {
+  ifstream ifs;
+  ifs.open(FILES_INFO_PATH);
+  string line;
+  string data;
+  int numFiles = 0;
+  bool file_exists = false;
+
+  if (ifs.is_open()) {
+    getline(ifs, line);
+    numFiles = atoi(line.c_str());
+
+    for (int i = 0; i < numFiles; ++i) {
+      getline(ifs, line);
+
+      int parsed_id = stoi(line.c_str());
+      if (parsed_id == info.fileId) {
+        file_exists = true;
+        data += to_string(info.fileId) + "," + info.fileName + "," +
+          to_string(min_idx) + "," + to_string(info.totChunksPerFile) + "," +
+          to_string(info.file_size) + "\n";
+      } else {
+        data += line + "\n";
+      }
+    }
+
+    if (!file_exists)
+      data += to_string(info.fileId) + "," + info.fileName + "," +
+        to_string(min_idx) + "," + to_string(info.totChunksPerFile) + "," +
+        to_string(info.file_size) + "\n";
+
+    ifs.close();
+  }
+  else {
+    printf("[FileManager::%s] Error opening file %s\n",__func__ ,FILES_INFO_PATH);
+  }
+
+  ofstream ofs;
+  ofs.open(FILES_INFO_PATH);
+  if (ofs.is_open()) {
+    ofs << numFiles+1 << "\n";
+    ofs << data;
+    ofs.close();
+  }
+}
 
 void FileManager::UpdateFilesListDoc(int id, string name) {
     ifstream ifs;
@@ -199,38 +254,56 @@ void FileManager::UpdateFilesListDoc(int id, string name) {
 
 bool FileManager::addFileToDisk(int idx)
 {
-    FileInfo* file = &mFileInfo[idx];
+    FileInfo &file_info = mFileInfo[idx];
 
     //set complete to true
-    pthread_mutex_lock( &file->fMutex );
-        file->complete = true;
-    pthread_mutex_unlock( &file->fMutex );
+    pthread_mutex_lock( &file_info.fMutex );
+        file_info.complete = true;
+    pthread_mutex_unlock( &file_info.fMutex );
 
     pthread_mutex_lock( &fileMutex );
-         UpdateFilesListDoc(file->fileId, file->fileName);
+    UpdateFilesListDoc(file_info, file_info.totChunksPerFile);
     pthread_mutex_unlock( &fileMutex );
 
     return true;
 }
 
+int FileManager::getMinimumUnfinishedChunk(unordered_set<int> &inprocess_chunks)
+{
+  int chunk_id = 0;
 
-int FileManager::addFileToCache(string file_name, int file_size, int total_chunks)
+  if (inprocess_chunks.empty())
+    return chunk_id;
+
+  chunk_id = INT_MAX;
+  for (const auto& id : inprocess_chunks) {
+    chunk_id = min(id, chunk_id);
+  }
+  return chunk_id;
+}
+
+bool FileManager::addFileToCache(FileInfo &file_info)
 {
     int _nFiles = 0;
 
     pthread_mutex_lock( &fileMutex );
     cout << "[FileManager] Num files = " << mNumFiles << endl;
 
-    mFileInfo.emplace_back(mNumFiles, file_name, file_size, total_chunks);
+    file_info.fileId = mNumFiles;
+    mFileInfo.emplace_back(file_info);
 
     FILE* fp = fopen(file_name.c_str(), "w");
     fclose(fp);
 
     _nFiles = mNumFiles;
     mNumFiles++;
+    pthread_mutex_unlock(&fileMutex);
+
+    pthread_mutex_lock( &fileMutex );
+    UpdateFilesListDoc(file_info, 0);
     pthread_mutex_unlock( &fileMutex );
 
-    return _nFiles;
+    return true;
 }
 
 bool FileManager::fileWrite(int idx, int start, int size, void* buf) {
@@ -335,6 +408,13 @@ int FileManager::updateChunks(int file_id, int chunk_idx_completed)
         markChunkInProcess(file_id, nextIdx);
         mFileInfo[file_id].totChunksExisting++;
 
+        // on every 10th chunk, as a policy, update the files_list doc
+        // with the file status
+        if (mFileInfo[file_id].totChunksExisting % 10) {
+          int min_idx = getMinimumUnfinishedChunk(mFileInfo[file_id].inprocess_chunks_idx);
+          UpdateFilesListDoc(mFileInfo[file_id], min_idx);
+        }
+
         pthread_mutex_unlock( &mFileInfo[file_id].fMutex );
         return nextIdx;
     }
@@ -385,6 +465,21 @@ int FileManager::getFileSize(int fileId)
     }
 }
 
+bool FileManager::isFileDownloaded(int file_id) {
+  if (file_id == -1)
+    return false;
+
+  // mutual exclusive read
+  pthread_mutex_lock(&mFileInfo[file_id].fMutex);
+  int chunks_downloaded = mFileInfo[file_id].totChunksExisting;
+  int total_chunks = mFileInfo[file_id].totChunksPerFile;
+  pthread_mutex_unlock(&FileInfo[file_id].fMutex);
+
+  if (chunks_downloaded < total_chunks)
+    return false;
+
+  return true;
+}
 
 int FileManager::removeLocalFile(string fileName)
 {
@@ -446,7 +541,7 @@ int FileManager::removeLocalFile(string fileName)
         }
 
         //Remove from the local dir
-        string syscall = "\\rm -f " + fileName; 
+        string syscall = "\\rm -f " + fileName;
         printf("[FileManager] Making System call:\n $ %s \n\n", syscall.c_str());
         system (syscall.c_str());
 
@@ -457,7 +552,6 @@ int FileManager::removeLocalFile(string fileName)
 }
 
 int FileManager::removeFilefromFilesList(int id) {
-    
     int result = -1;
     ifstream ifs;
     ifs.open(FILES_INFO_PATH);
@@ -493,4 +587,21 @@ int FileManager::removeFilefromFilesList(int id) {
     }
 
     return result;
+}
+
+int FileManager::chunksRemaining(int file_id) {
+  pthread_mutex_lock(&mFileInfo[file_id].fMutex);
+  int chunks_left = mFileInfo[file_id].totChunksPerFile - mFileInfo[file_id].totChunksExisting;
+  pthread_mutex_unlock(&mFileInfo[file_id].fMutex);
+
+  return chunks_left;
+}
+
+vector<string> FileManager::getIncompleteFileName() {
+  vector<string> out;
+  for (FileInfo info: mFileInfo) {
+    if (info.complete == false)
+      out.emplace_back(info.fileName);
+  }
+  return out;
 }
