@@ -30,6 +30,7 @@ class ThreadPool;
 class FileManager;
 class StatusManager;
 struct ThreadInfo;
+struct sockaddr_in;
 
 struct PeerInfo {
   string ip;
@@ -46,23 +47,24 @@ struct MainThreadData {
 };
 
 struct DownloadThreadData {
-  bool status;
+  int num_peers;
+  char *file_name;
   pthread_t thread;
-  pthread_mutex_t mutex;
   ThreadPool *thread_pool;
   FileManager *file_manager;
-  char *file_name;
-  int num_peers;
+  vector<PeerInfo> *peers_list;
+  bool status;
   vector<pthread_t*> threads;
   vector<int> server_sockets;
-  vector<PeerInfo> *peers_list;
+  pthread_mutex_t mutex;
 
-  DownloadThreadData(int num_peers_, char* file_name_, ThreadPool *thread_pool_,
+  DownloadThreadData(int num_peers_, ThreadPool *thread_pool_,
                      FileManager *file_manager_, vector<PeerInfo> *peers_list_) :
-  num_peers(num_peers_), file_name(file_name_), thread_pool(thread_pool_),
-    file_manager(file_manager_), peers_list(peers_list_), status(true) {
-    threads = vector<pthread_t*>(num_peers);
-    server_sockets = vector<int>(num_peers);
+  num_peers(num_peers_), file_name(NULL), thread_pool(thread_pool_),
+    file_manager(file_manager_), peers_list(peers_list_), status(false) {
+    threads = vector<pthread_t*>(num_peers_);
+    server_sockets = vector<int>(num_peers_);
+    pthread_mutex_init(&mutex, NULL);
   }
 };
 
@@ -121,7 +123,7 @@ class TorrentManager {
 
   // accept and connect thread
   MainThreadData mAccThreadInfo;
-  DownloadThreadData mConnThreadInfo[DOWNLOAD_LIMIT];
+  vector<DownloadThreadData> mConnThreadInfo;
 
  private:
   bool updatePeersInfo();
@@ -220,6 +222,7 @@ class TorrentManager {
                                               unordered_set<int> &contributing_peers,
                                               vector<sockaddr_in> &client_addrs,
                                               vector<int> *server_sockets,
+                                              string file_name,
                                               pthread_mutex_t *mutex);
 
   static FileInfo getFileInfoFromPeer(vector<int> &active_peers, string file_name,
@@ -231,11 +234,11 @@ class TorrentManager {
   static void createThreadsToReceiveFile(vector<int> &active_peers, FileInfo file_info,
                                          vector<sockaddr_in> &client_addrs,
                                          unordered_set<int> &contributing_peers,
-                                         ThreadParams *params,
+                                         DownloadThreadData *params,
                                          vector<int> &receiver_thread_ids,
                                          vector<ThreadParams_L2> &rec_thread_params);
 
-  static void closeAllSockets(vector<int> *server_sockets);
+  static void closeAllSockets(vector<int> &server_sockets);
 
   static int getRequiredThreadsNum(FileInfo file_info);
 
@@ -243,6 +246,6 @@ class TorrentManager {
                                            pthread_mutex_t *mutex,
                                            unordered_set<int> &peers);
 
-  static void startDownload(string file_name);
+  void startDownload(string file_name);
 };
 #endif

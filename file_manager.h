@@ -188,6 +188,8 @@ class FileManager {
   int getMinimumUnfinishedChunk(unordered_set<int> &inprocess_chunks);
 
   vector<string> getIncompleteFileNames();
+
+  FileInfo getFileInfoById(int file_id);
 };
 
 #endif

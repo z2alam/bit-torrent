@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -46,8 +47,8 @@ bool FileManager::cacheFilesList()
     ifstream file (FILES_INFO_PATH);
 
     if (!file.good()) {
-        printf ("[FileManager] file %s doesnt exist - Num of Files "
-                "= 0.\nCreating file... \n", FILES_INFO_PATH);
+        //printf ("[FileManager] file %s doesnt exist - Num of Files "
+        //        "= 0.\nCreating file... \n", FILES_INFO_PATH);
         ofstream outfile (FILES_INFO_PATH);
         mNumFiles = 0;
         success = true;
@@ -85,7 +86,7 @@ bool FileManager::cacheFilesList()
               mFileInfo[i].file_size = stoi(fileinfo[4]);
             }
 
-            if (mFileInfo[i].totChunksPerFile == mFileInfo[i].totChunkExisting) {
+            if (mFileInfo[i].totChunksPerFile == mFileInfo[i].totChunksExisting) {
               mFileInfo[i].complete = true;
 
               //Open file and determine # of chunks
@@ -110,6 +111,8 @@ bool FileManager::cacheFilesList()
               mFileInfo[i].totChunksExisting = mFileInfo[i].totChunksPerFile;
               fclose(infile);
             } else {
+              while (!mFileInfo[i].next_idx_stack.empty())
+                  mFileInfo[i].next_idx_stack.pop();
               mFileInfo[i].next_idx_stack.push(mFileInfo[i].totChunksExisting);
             }
 
@@ -142,7 +145,7 @@ bool FileManager::fileExists(int fileId)
         i++;
     }
 
-    printf("[FileManager::%s] File Id %d does NOT exist\n",__func__, fileId);
+    // printf("[FileManager::%s] File Id %d does NOT exist\n",__func__, fileId);
     return false;
 }
 
@@ -189,7 +192,7 @@ void FileManager::UpdateFilesListDoc(FileInfo &info, int min_idx) {
     for (int i = 0; i < numFiles; ++i) {
       getline(ifs, line);
 
-      int parsed_id = stoi(line.c_str());
+      int parsed_id = stoi(line);
       if (parsed_id == info.fileId) {
         file_exists = true;
         data += to_string(info.fileId) + "," + info.fileName + "," +
@@ -214,7 +217,7 @@ void FileManager::UpdateFilesListDoc(FileInfo &info, int min_idx) {
   ofstream ofs;
   ofs.open(FILES_INFO_PATH);
   if (ofs.is_open()) {
-    ofs << numFiles+1 << "\n";
+    ofs << numFiles + ((file_exists) ? 0 : 1) << "\n";
     ofs << data;
     ofs.close();
   }
@@ -284,18 +287,15 @@ int FileManager::getMinimumUnfinishedChunk(unordered_set<int> &inprocess_chunks)
 
 bool FileManager::addFileToCache(FileInfo &file_info)
 {
-    int _nFiles = 0;
-
     pthread_mutex_lock( &fileMutex );
     cout << "[FileManager] Num files = " << mNumFiles << endl;
 
     file_info.fileId = mNumFiles;
     mFileInfo.emplace_back(file_info);
 
-    FILE* fp = fopen(file_name.c_str(), "w");
+    FILE* fp = fopen(file_info.fileName.c_str(), "w");
     fclose(fp);
 
-    _nFiles = mNumFiles;
     mNumFiles++;
     pthread_mutex_unlock(&fileMutex);
 
@@ -410,7 +410,7 @@ int FileManager::updateChunks(int file_id, int chunk_idx_completed)
 
         // on every 10th chunk, as a policy, update the files_list doc
         // with the file status
-        if (mFileInfo[file_id].totChunksExisting % 10) {
+        if ((mFileInfo[file_id].totChunksExisting % 1000) == 0) {
           int min_idx = getMinimumUnfinishedChunk(mFileInfo[file_id].inprocess_chunks_idx);
           UpdateFilesListDoc(mFileInfo[file_id], min_idx);
         }
@@ -473,7 +473,7 @@ bool FileManager::isFileDownloaded(int file_id) {
   pthread_mutex_lock(&mFileInfo[file_id].fMutex);
   int chunks_downloaded = mFileInfo[file_id].totChunksExisting;
   int total_chunks = mFileInfo[file_id].totChunksPerFile;
-  pthread_mutex_unlock(&FileInfo[file_id].fMutex);
+  pthread_mutex_unlock(&mFileInfo[file_id].fMutex);
 
   if (chunks_downloaded < total_chunks)
     return false;
@@ -597,11 +597,20 @@ int FileManager::chunksRemaining(int file_id) {
   return chunks_left;
 }
 
-vector<string> FileManager::getIncompleteFileName() {
+vector<string> FileManager::getIncompleteFileNames() {
   vector<string> out;
   for (FileInfo info: mFileInfo) {
     if (info.complete == false)
       out.emplace_back(info.fileName);
   }
   return out;
+}
+
+FileInfo FileManager::getFileInfoById(int file_id) {
+    FileInfo info = FileInfo();
+
+    if (file_id >= 0)
+        info = mFileInfo[file_id];
+
+    return info;
 }
