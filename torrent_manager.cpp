@@ -338,6 +338,7 @@ bool TorrentManager::run()
           }
         }
       }
+    sleep(1);
   }
   return true;
 }
